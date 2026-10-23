@@ -88,6 +88,7 @@ class Stats:
     fuel_level: float
     oxidizer_level: float
     altitude: float
+    previous_altitude: float
     pressure: float
     angle: float
     oxidizer_heater: int
@@ -107,6 +108,11 @@ class Stats:
         self.oxidizer_heater = 0
         self.igniter = 0
         self.parachute = 0
+        self.previous_altitude = 0.0
+    
+    @property
+    def velocity(self):
+        return (s.altitude - s.previous_altitude)
 
 
 s = Stats()
@@ -116,10 +122,11 @@ def print_info(stdscr: curses.window, s: Stats):
     stdscr.clear()
     stdscr.addstr(0, 0, "------------------------")
     stdscr.addstr(2, 0, f"altitude: {s.altitude:.2f}")
-    stdscr.addstr(3, 0, f"fuel_level: {s.fuel_level:.2f}")
-    stdscr.addstr(4, 0, f"oxidizer_level: {s.oxidizer_level:.2f}")
-    stdscr.addstr(5, 0, f"pressure: {s.pressure:.2f}")
-    stdscr.addstr(6, 0, f"angle: {s.angle:.2f}")
+    stdscr.addstr(3, 0, f"velocity: {s.velocity:.2f}")
+    stdscr.addstr(4, 0, f"fuel_level: {s.fuel_level:.2f}")
+    stdscr.addstr(5, 0, f"oxidizer_level: {s.oxidizer_level:.2f}")
+    stdscr.addstr(6, 0, f"pressure: {s.pressure:.2f}")
+    stdscr.addstr(7, 0, f"angle: {s.angle:.2f}")
     stdscr.addstr(8, 0, "servos:")
     stdscr.addstr(9, 0, f"  fuel_intake={s.fuel_intake:.2f}, oxidizer_intake={s.oxidizer_intake:.2f}, fuel_main={s.fuel_main:.2f}, oxidizer_main={s.oxidizer_main:.2f}")
     stdscr.addstr(10, 0, f"relays: oxidizer_heater={s.oxidizer_heater}, igniter={s.igniter}, parachute={s.parachute}")
@@ -158,6 +165,7 @@ def parse_sensor_frame(frame: Frame):
         case 1:
             s.oxidizer_level = float(frame.data)
         case 2:
+            s.previous_altitude = s.altitude
             s.altitude = float(frame.data)
         case 3:
             s.pressure = float(frame.data)
@@ -262,6 +270,21 @@ def preasure_watchdog(rl: RelaysManager, s: Stats):
 
         time.sleep(0.1)
 
+def launch(rl: RelaysManager, sl: ServoManager, s: Stats):
+    while s.pressure < 55:
+        time.sleep(0.5)
+    sl.set(Servo.FUEL_MAIN, 0)
+    sl.set(Servo.OXIDIZER_MAIN, 0)
+    time.sleep(0.5)
+    rl.set(Relay.IGNITER, Toggle.ON)
+    while s.fuel_level > 0 or s.oxidizer_level > 0:
+        time.sleep(0.1)
+
+def landing(rl: RelaysManager, s: Stats):
+    while s.velocity > 0:
+        time.sleep(0.1)
+    rl.set(Relay.PARACHUTE, Toggle.ON)
+
 def stats_thread(stdscr: curses.window, s: Stats):
     while True:
         print_info(stdscr, s)
@@ -288,7 +311,8 @@ def main(stdscr: curses.window):
     threading.Thread(target=preasure_watchdog, args=(rl, s)).start()
 
 
-    setup_flight(s, rl, sl)
+    launch(rl, sl, s)
+    landing(rl, s)
 
     while True:
         time.sleep(0.1)
