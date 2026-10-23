@@ -115,13 +115,13 @@ s = Stats()
 def print_info(stdscr: curses.window, s: Stats):
     stdscr.clear()
     stdscr.addstr(0, 0, "------------------------")
-    stdscr.addstr(2, 0, f"altitude: {s.altitude}")
-    stdscr.addstr(3, 0, f"fuel_level: {s.fuel_level}")
-    stdscr.addstr(4, 0, f"oxidizer_level: {s.oxidizer_level}")
-    stdscr.addstr(5, 0, f"pressure: {s.pressure}")
-    stdscr.addstr(6, 0, f"angle: {s.angle}")
+    stdscr.addstr(2, 0, f"altitude: {s.altitude:.2f}")
+    stdscr.addstr(3, 0, f"fuel_level: {s.fuel_level:.2f}")
+    stdscr.addstr(4, 0, f"oxidizer_level: {s.oxidizer_level:.2f}")
+    stdscr.addstr(5, 0, f"pressure: {s.pressure:.2f}")
+    stdscr.addstr(6, 0, f"angle: {s.angle:.2f}")
     stdscr.addstr(8, 0, "servos:")
-    stdscr.addstr(9, 0, f"  fuel_intake={s.fuel_intake}, oxidizer_intake={s.oxidizer_intake}, fuel_main={s.fuel_main}, oxidizer_main={s.oxidizer_main}")
+    stdscr.addstr(9, 0, f"  fuel_intake={s.fuel_intake:.2f}, oxidizer_intake={s.oxidizer_intake:.2f}, fuel_main={s.fuel_main:.2f}, oxidizer_main={s.oxidizer_main:.2f}")
     stdscr.addstr(10, 0, f"relays: oxidizer_heater={s.oxidizer_heater}, igniter={s.igniter}, parachute={s.parachute}")
     stdscr.addstr(0, 0, "------------------------")
     stdscr.refresh()
@@ -171,13 +171,17 @@ def parse_relay_frame(frame: Frame):
     if not isinstance(frame.data, int):
         return
 
+    if frame.operation == ids.OperationID.RELAY.value.OPEN:
+        value = 1
+    else:
+        value = 0
     match frame.device_id:
         case 0:
-            s.oxidizer_heater = int(frame.data)
+            s.oxidizer_heater = value
         case 1:
-            s.igniter = int(frame.data)
+            s.igniter = value
         case 2:
-            s.parachute = int(frame.data)
+            s.parachute = value
         case _:
             pass
 
@@ -206,17 +210,38 @@ def setup_callbacks(cm: CommunicationManager):
                            ids.OperationID.SENSOR.value.READ)
         cm.register_callback(parse_sensor_frame, frame) # type: ignore
 
-    for i in range(3):
+    for i in range(1):
         frame = Frame(ids.BoardID.SOFTWARE, 
                            ids.PriorityID.HIGH, 
                            ids.ActionID.ACK, 
                            ids.BoardID.ROCKET, 
                            ids.DeviceID.RELAY, 
-                           i, # relay sensors
+                           0, # relay sensors
                            ids.DataTypeID.INT16,
-                           ids.OperationID.RELAY.value.STATUS)
+                           ids.OperationID.RELAY.value.OPEN,
+                           )
+        cm.register_callback(parse_relay_frame, frame) # type: ignore
+        frame = Frame(ids.BoardID.SOFTWARE, 
+                           ids.PriorityID.HIGH, 
+                           ids.ActionID.ACK, 
+                           ids.BoardID.ROCKET, 
+                           ids.DeviceID.RELAY, 
+                           0, # relay sensors
+                           ids.DataTypeID.INT16,
+                           ids.OperationID.RELAY.value.CLOSE,
+                           )
         cm.register_callback(parse_relay_frame, frame) # type: ignore
 
+def setup_flight(stats: Stats, rl: RelaysManager, sl: ServoManager):
+    sl.set(Servo.OXIDIZER_INTAKE, 0)
+    while stats.oxidizer_level < 100:
+        time.sleep(0.1)
+    sl.set(Servo.OXIDIZER_INTAKE, 100)
+    sl.set(Servo.FUEL_INTAKE, 0)
+    while stats.fuel_level < 100:
+        time.sleep(0.1)
+    sl.set(Servo.FUEL_INTAKE, 100)
+    rl.set(Relay.OXIDIZER_HEATER, Toggle.ON)
 
 def listening_thread(cm: CommunicationManager):
     while True:
@@ -227,6 +252,15 @@ def listening_thread(cm: CommunicationManager):
             pass
         except UnregisteredCallbackError as e:
             print(f"Unregistered callback error: {str(e)}")
+
+def preasure_watchdog(rl: RelaysManager, s: Stats):
+    while True:
+        if s.pressure > 63 and s.oxidizer_heater == 1:
+            rl.set(Relay.OXIDIZER_HEATER, Toggle.OFF)
+        elif s.pressure < 57 and s.oxidizer_heater == 0:
+            rl.set(Relay.OXIDIZER_HEATER, Toggle.ON)
+
+        time.sleep(0.1)
 
 def stats_thread(stdscr: curses.window, s: Stats):
     while True:
@@ -243,13 +277,18 @@ def main(stdscr: curses.window):
     cm.connect(TcpSettings("127.0.0.1", 3000))
 
     setup_callbacks(cm)
+
     rl = RelaysManager(cm)
     sl = ServoManager(cm)
 
     threading.Thread(target=listening_thread, args=(cm,)).start()
     threading.Thread(target=stats_thread, args=(stdscr, s)).start()
 
+    setup_flight(s, RelaysManager(cm), ServoManager(cm))
+    threading.Thread(target=preasure_watchdog, args=(rl, s)).start()
 
+
+    setup_flight(s, rl, sl)
 
     while True:
         time.sleep(0.1)
