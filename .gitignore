@@ -1,1 +1,7 @@
 **/__pycache__
+
+# Added by cargo
+
+/communication-library-rs/target
+/communication-library-rs/Cargo.lock
+/target

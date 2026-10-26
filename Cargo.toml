@@ -1,0 +1,9 @@
+[package]
+name = "software_zadanie_rekrutacyjne_2026"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+communication-library-rs = { path = "./communication-library-rs" }
+tokio = "1.54.1"
