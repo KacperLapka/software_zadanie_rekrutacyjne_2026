@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.104"
 communication-library-rs = { path = "./communication-library-rs" }
+deku = "0.20.3"
 tokio = "1.54.1"
