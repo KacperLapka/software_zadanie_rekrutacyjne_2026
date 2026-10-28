@@ -5,7 +5,7 @@ use tokio::sync::{Mutex, MutexGuard};
 use tokio::time::interval;
 
 use communication_library_rs::frame::{Frame, FrameError};
-use communication_library_rs::ids::{ActionID, BoardID, DeviceID, Operation, RelayOperationID};
+use communication_library_rs::ids::{ActionID, BoardID, DeviceID, RelayOperationID};
 
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
@@ -103,6 +103,11 @@ fn match_frame_akc(frame: Frame, mut stats: MutexGuard<'_, Stats>) -> Result<(),
     Ok(())
 }
 
+fn match_frame_nakc(frame: Frame, _: MutexGuard<'_, Stats>) -> Result<(), FrameError>{
+    println!("Error: {:?}", frame);
+    Ok(())
+}
+
 fn handle_frame(frame: Frame, stats: Arc<Mutex<Stats>>) {
     tokio::spawn(async move {
         if frame.destination != BoardID::Software {
@@ -113,6 +118,7 @@ fn handle_frame(frame: Frame, stats: Arc<Mutex<Stats>>) {
         let r = match frame.action {
             ActionID::Feed => match_frame_feed(frame, stats),
             ActionID::Ack => match_frame_akc(frame, stats),
+            ActionID::Nack => match_frame_nakc(frame, stats),
             _ => Ok(())
         };
         if let Err(err) = r {
