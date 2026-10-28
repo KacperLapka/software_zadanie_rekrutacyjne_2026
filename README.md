@@ -9,3 +9,14 @@
 
 # Plany
 Jeśli chodzi o to jak implementacja sekwencji startu miała by wyglądać dla kodu w rust to planowałem zrobić taki miniframework tak jak to było w kodzie `main.py` chodzi mi ti o klasy `ServoManager`, `RelaysManager` i enum `Toggle`.
+
+# Uruchomienie
+1. Rust telemetria
+```
+cargo run
+```
+
+2. Skrypt pythona
+```
+python main.py
+```
