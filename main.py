@@ -318,4 +318,5 @@ def main(stdscr: curses.window):
         time.sleep(0.1)
 
 
-curses.wrapper(main)
+if __name__ == "__main__": 
+    curses.wrapper(main)
