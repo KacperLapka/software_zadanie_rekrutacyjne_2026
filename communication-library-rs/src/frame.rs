@@ -107,6 +107,36 @@ impl Payload {
     }
 }
 
+macro_rules! impl_payload_try_into {
+    ($($target:ty => $expected:expr, $variant:pat => $value:expr);* $(;)?) => {
+        $(
+            impl TryInto<$target> for Payload {
+                type Error = FrameError;
+
+                fn try_into(self) -> Result<$target, Self::Error> {
+                    match self {
+                        $variant => Ok($value),
+                        other => Err(FrameError::PayloadMismatch(other, $expected)),
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_payload_try_into! {
+    f32 => DataTypeID::Float, Payload::Float(value) => value;
+    u32 => DataTypeID::Uint32, Payload::Uint32(value) => value;
+    u16 => DataTypeID::Uint16, Payload::Uint16(value, _) => value;
+    u8 => DataTypeID::Uint8, Payload::Uint8(value, _) => value;
+    i32 => DataTypeID::Int32, Payload::Int32(value) => value;
+    i16 => DataTypeID::Int16, Payload::Int16(value, _) => value;
+    i8 => DataTypeID::Int8, Payload::Int8(value, _) => value;
+    () => DataTypeID::NoData, Payload::NoData(_) => ();
+    (i16, i16) => DataTypeID::Int16x2, Payload::Int16x2(first, second) => (first, second);
+    (u16, i16) => DataTypeID::Uint16Int16, Payload::Uint16Int16(first, second) => (first, second)
+}
+
 impl From<()> for Payload {
     fn from((): ()) -> Self {
         Payload::NoData(0)
@@ -289,16 +319,8 @@ impl Frame {
             return Err(FrameError::Decoding("incorrect length".to_string()));
         }
         let crc = &raw[10..];
-        println!();
-        for byte in crc {
-            print!("{:02x} ", byte);
-        }
-        println!();
         let data = &raw[..10];
-        for byte in data {
-            print!("{:02x} ", byte);
-        }
-        println!();
+        
         if crc != calculate_crc(data) {
             return Err(FrameError::Decoding("incorrect crc".to_string()));
         }
@@ -329,4 +351,35 @@ fn calculate_crc(data: &[u8]) -> [u8; 4] {
         .collect();
     let mpeg = Crc::<u32>::new(&CRC_32_MPEG_2);
     mpeg.checksum(&mixed).to_le_bytes()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn payload_try_into_accepts_matching_type() {
+        let float: Result<f32, FrameError> = Payload::Float(42.5).try_into();
+        let uint16: Result<u16, FrameError> = Payload::Uint16(7, 0).try_into();
+        let empty: Result<(), FrameError> = Payload::NoData(0).try_into();
+
+        assert_eq!(float, Ok(42.5));
+        assert_eq!(uint16, Ok(7));
+        assert_eq!(empty, Ok(()));
+    }
+
+    #[test]
+    fn payload_try_into_rejects_mismatched_type() {
+        let float: Result<f32, FrameError> = Payload::Int32(42).try_into();
+        let uint32: Result<u32, FrameError> = Payload::Float(3.5).try_into();
+
+        assert_eq!(
+            float,
+            Err(FrameError::PayloadMismatch(Payload::Int32(42), DataTypeID::Float))
+        );
+        assert_eq!(
+            uint32,
+            Err(FrameError::PayloadMismatch(Payload::Float(3.5), DataTypeID::Uint32))
+        );
+    }
 }

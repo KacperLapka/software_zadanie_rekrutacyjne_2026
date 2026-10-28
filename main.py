@@ -224,7 +224,7 @@ def setup_callbacks(cm: CommunicationManager):
                            ids.ActionID.ACK, 
                            ids.BoardID.ROCKET, 
                            ids.DeviceID.RELAY, 
-                           0, # relay sensors
+                           i, # relay sensors
                            ids.DataTypeID.INT16,
                            ids.OperationID.RELAY.value.OPEN,
                            )
